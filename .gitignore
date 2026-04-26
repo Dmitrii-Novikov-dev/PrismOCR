@@ -216,3 +216,20 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ===== OCR / ML project specific =====
+
+# Trained templates / models
+*.pkl
+models/
+
+# Your dataset (ONLY if not required for submission)
+data/raw/
+data/processed/
+
+# Logs (your program prints / debugging)
+*.log
+logs/
+
+# OS junk
+.DS_Store
