@@ -38,10 +38,6 @@ from sklearn.metrics import accuracy_score, classification_report
 
  
 
- 
-
- 
-
 # -----------------------------
 
 # Utility: labels
@@ -256,10 +252,6 @@ def resize_mask_nn(mask: np.ndarray, size: Tuple[int, int]) -> np.ndarray:
 
  
 
- 
-
- 
-
 # -----------------------------
 
 # Connected components
@@ -424,6 +416,10 @@ class TemplateOCR:
 
         self.templates: Dict[str, List[np.ndarray]] = {}
 
+        self.pca = None
+
+        self.pca_templates: Dict[str, List[np.ndarray]] = {}
+
  
 
     def add_template(self, label: str, mask: np.ndarray) -> None:
@@ -444,6 +440,44 @@ class TemplateOCR:
 
  
 
+    def fit_pca(self, n_components: int = 30) -> None:
+
+        all_vectors = []
+
+        all_labels = []
+
+ 
+
+        for label, tmpl_list in self.templates.items():
+
+            for tmpl in tmpl_list:
+
+                all_vectors.append(tmpl.flatten())
+
+                all_labels.append(label)
+
+ 
+
+        all_vectors = np.array(all_vectors, dtype=np.float32)
+
+ 
+
+        self.pca = PCA(n_components=n_components, random_state=42)
+
+        transformed = self.pca.fit_transform(all_vectors)
+
+ 
+
+        self.pca_templates = {}
+
+ 
+
+        for label, vec in zip(all_labels, transformed):
+
+            self.pca_templates.setdefault(label, []).append(vec)
+
+ 
+
     def match_glyph(self, glyph_mask: np.ndarray) -> str:
 
         glyph_mask = crop_to_foreground(glyph_mask, pad=1)
@@ -456,21 +490,39 @@ class TemplateOCR:
 
  
 
-        for label, tmpl_list in self.templates.items():
+        if self.pca is not None:
 
-            for tmpl in tmpl_list:
+            glyph_vec = glyph.flatten().reshape(1, -1)
 
-                score= self.mse(glyph, tmpl)
-
-                scores.append((score, label))
-
-        scores.sort(key=lambda x:x[0])
+            glyph_vec = self.pca.transform(glyph_vec)[0]
 
  
 
-        k=7
+            for label, vec_list in self.pca_templates.items():
+
+                for vec in vec_list:
+
+                    score = self.mse(glyph_vec, vec)
+
+                    scores.append((score, label))
+
+        else:
+
+            for label, tmpl_list in self.templates.items():
+
+                for tmpl in tmpl_list:
+
+                    score = self.mse(glyph, tmpl)
+
+                    scores.append((score, label))
 
  
+
+        scores.sort(key=lambda x: x[0])
+
+ 
+
+        k = 6
 
         top_scores = scores[:k]
 
@@ -486,9 +538,13 @@ class TemplateOCR:
 
                 votes[label] = 0.0
 
-            votes[label] += 1.0/(score + 1e-6)
+ 
 
-        best_label = max(votes, key = votes.get)
+            votes[label] += 1.0 / (score + 1e-6)
+
+ 
+
+        best_label = max(votes, key=votes.get)
 
  
 
@@ -682,7 +738,13 @@ def load_typed_dataset(
 
  
 
-    df = pd.read_csv(csv_path)[:20000]
+    df = pd.read_csv(csv_path)
+
+ 
+
+    # keep TMNIST from being enormous
+
+    df = df[:20000]
 
  
 
@@ -1117,6 +1179,12 @@ def run_template_experiment(
     print("Training template OCR model...")
 
     train_ocr_model(ocr, X_train, y_train)
+
+ 
+
+    print("Fitting PCA for template OCR model...")
+
+    ocr.fit_pca(n_components=30)
 
  
 
